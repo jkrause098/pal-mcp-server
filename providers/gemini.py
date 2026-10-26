@@ -173,7 +173,7 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
         # Create contents structure
         contents = [{"parts": parts}]
 
-        # Gemini 3 Pro Preview currently rejects medium thinking budgets; bump to high.
+        # Gemini 3 Pro Preview rejects medium thinking; bump to high.
         effective_thinking_mode = thinking_mode
         if resolved_model_name == "gemini-3-pro-preview" and thinking_mode == "medium":
             logger.debug(
@@ -192,14 +192,16 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
         if max_output_tokens:
             generation_config.max_output_tokens = max_output_tokens
 
-        # Add thinking configuration for models that support it
+        # Add thinking configuration for models that support it.
+        # Gemini 2.5 uses thinking_budget token counts. Gemini 3.x/4.x use thinking_level.
         if capabilities.supports_extended_thinking and effective_thinking_mode in self.THINKING_BUDGETS:
-            # Get model's max thinking tokens and calculate actual budget
-            model_config = capability_map.get(resolved_model_name)
-            if model_config and model_config.max_thinking_tokens > 0:
-                max_thinking_tokens = model_config.max_thinking_tokens
-                actual_thinking_budget = int(max_thinking_tokens * self.THINKING_BUDGETS[effective_thinking_mode])
-                generation_config.thinking_config = types.ThinkingConfig(thinking_budget=actual_thinking_budget)
+            thinking_config = self._build_thinking_config(
+                resolved_model_name,
+                effective_thinking_mode,
+                capability_map.get(resolved_model_name),
+            )
+            if thinking_config is not None:
+                generation_config.thinking_config = thinking_config
 
         # Retry logic with progressive delays
         max_retries = 4  # Total of 4 attempts
@@ -453,6 +455,54 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
             logger.error(f"Error processing image {image_path}: {e}")
             return None
 
+    def _uses_thinking_budget(self, model_name: str) -> bool:
+        """Return True when the model expects thinking_budget instead of thinking_level."""
+        return model_name.startswith("gemini-2.")
+
+    def _resolve_thinking_level(self, model_name: str, thinking_mode: str) -> str:
+        """Map PAL thinking modes onto Gemini 3.x/4.x thinking_level values."""
+        mode = thinking_mode
+        if model_name == "gemini-3-pro-preview" and mode == "medium":
+            mode = "high"
+
+        mapping = {
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "max": "high",
+        }
+        level = mapping.get(mode, "medium")
+        # Gemini 4 Argon and 3.8 Flash do not accept "minimal"
+        if level == "minimal" and (
+            model_name.startswith("gemini-4") or model_name in {"gemini-3.8-flash", "gemini-3.1-pro-preview"}
+        ):
+            level = "low"
+        return level
+
+    def _build_thinking_config(
+        self,
+        model_name: str,
+        thinking_mode: str,
+        model_config: Optional[ModelCapabilities],
+    ) -> Optional[types.ThinkingConfig]:
+        """Build the correct ThinkingConfig for 2.5 (budget) vs 3.x/4.x (level)."""
+        if self._uses_thinking_budget(model_name):
+            if not model_config or model_config.max_thinking_tokens <= 0:
+                return None
+            actual_thinking_budget = int(model_config.max_thinking_tokens * self.THINKING_BUDGETS[thinking_mode])
+            return types.ThinkingConfig(thinking_budget=actual_thinking_budget)
+
+        level = self._resolve_thinking_level(model_name, thinking_mode)
+        try:
+            return types.ThinkingConfig(thinking_level=level)
+        except (TypeError, ValueError):
+            # google-genai < 2.x only supports thinking_budget
+            if model_config and model_config.max_thinking_tokens > 0:
+                actual_thinking_budget = int(model_config.max_thinking_tokens * self.THINKING_BUDGETS[thinking_mode])
+                return types.ThinkingConfig(thinking_budget=actual_thinking_budget)
+            return None
+
     def get_preferred_model(self, category: "ToolModelCategory", allowed_models: list[str]) -> Optional[str]:
         """Get Gemini's preferred model for a given category from allowed models.
 
@@ -461,7 +511,7 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
             allowed_models: Pre-filtered list of models allowed by restrictions
 
         Returns:
-            Preferred model name or None
+            Preferred canonical model name or None
         """
         from tools.models import ToolModelCategory
 
@@ -469,53 +519,47 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
             return None
 
         capability_map = self.get_all_model_capabilities()
+        canonical: list[str] = []
+        seen: set[str] = set()
+        for name in allowed_models:
+            try:
+                resolved = self._resolve_model_name(name)
+            except (AttributeError, ValueError):
+                continue
+            if resolved in capability_map and resolved not in seen:
+                seen.add(resolved)
+                canonical.append(resolved)
 
-        # Helper to find best model from candidates
+        if not canonical:
+            return None
+
         def find_best(candidates: list[str]) -> Optional[str]:
-            """Return best model from candidates (sorted for consistency)."""
-            return sorted(candidates, reverse=True)[0] if candidates else None
+            """Return the highest-intelligence candidate, with rank as a tie-breaker."""
+            if not candidates:
+                return None
+            return max(
+                candidates,
+                key=lambda model: (
+                    capability_map[model].intelligence_score,
+                    capability_map[model].get_effective_capability_rank(),
+                    model,
+                ),
+            )
 
         if category == ToolModelCategory.EXTENDED_REASONING:
-            # For extended reasoning, prefer models with thinking support
-            # First try Pro models that support thinking
-            pro_thinking = [
-                m
-                for m in allowed_models
-                if "pro" in m and m in capability_map and capability_map[m].supports_extended_thinking
-            ]
-            if pro_thinking:
-                return find_best(pro_thinking)
+            thinking = [m for m in canonical if capability_map[m].supports_extended_thinking]
+            if thinking:
+                return find_best(thinking)
+            return find_best(canonical)
 
-            # Then any model that supports thinking
-            any_thinking = [
-                m for m in allowed_models if m in capability_map and capability_map[m].supports_extended_thinking
-            ]
-            if any_thinking:
-                return find_best(any_thinking)
-
-            # Finally, just prefer Pro models even without thinking
-            pro_models = [m for m in allowed_models if "pro" in m]
-            if pro_models:
-                return find_best(pro_models)
-
-        elif category == ToolModelCategory.FAST_RESPONSE:
-            # Prefer Flash models for speed
-            flash_models = [m for m in allowed_models if "flash" in m]
-            if flash_models:
-                return find_best(flash_models)
-
-        # Default for BALANCED or as fallback
-        # Prefer Flash for balanced use, then Pro, then anything
-        flash_models = [m for m in allowed_models if "flash" in m]
-        if flash_models:
+        flash_models = [m for m in canonical if "flash" in m]
+        if category == ToolModelCategory.FAST_RESPONSE and flash_models:
             return find_best(flash_models)
 
-        pro_models = [m for m in allowed_models if "pro" in m]
-        if pro_models:
-            return find_best(pro_models)
-
-        # Ultimate fallback to best available model
-        return find_best(allowed_models)
+        # BALANCED: prefer current Flash, then the highest-intelligence model
+        if flash_models:
+            return find_best(flash_models)
+        return find_best(canonical)
 
 
 # Load registry data at import time for registry consumers

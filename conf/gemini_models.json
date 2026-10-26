@@ -2,15 +2,15 @@
   "_README": {
     "description": "Model metadata for Google's Gemini API access.",
     "documentation": "https://github.com/BeehiveInnovations/pal-mcp-server/blob/main/docs/custom_models.md",
-    "usage": "Models listed here are exposed directly through the Gemini provider. Aliases are case-insensitive.",
+    "usage": "Models listed here are exposed directly through the Gemini provider. Aliases are case-insensitive. Use the endpoint ID from https://aistudio.google.com/docs/models as model_name.",
     "field_notes": "Matches providers/shared/model_capabilities.py.",
     "field_descriptions": {
-      "model_name": "The model identifier (e.g., 'gemini-2.5-pro', 'gemini-2.0-flash')",
+      "model_name": "The Gemini API endpoint ID (e.g., 'gemini-4-argon', 'gemini-3.8-flash')",
       "aliases": "Array of short names users can type instead of the full model name",
       "context_window": "Total number of tokens the model can process (input + output combined)",
       "max_output_tokens": "Maximum number of tokens the model can generate in a single response",
-      "max_thinking_tokens": "Maximum reasoning/thinking tokens the model will allocate when extended thinking is requested",
-      "supports_extended_thinking": "Whether the model supports extended reasoning tokens (currently none do via OpenRouter or custom APIs)",
+      "max_thinking_tokens": "Maximum reasoning/thinking tokens used only for Gemini 2.5 thinking_budget mapping",
+      "supports_extended_thinking": "Whether the model supports extended reasoning tokens",
       "supports_json_mode": "Whether the model can guarantee valid JSON output",
       "supports_function_calling": "Whether the model supports function/tool calling",
       "supports_images": "Whether the model can process images/visual input",
@@ -26,15 +26,18 @@
   },
   "models": [
     {
-      "model_name": "gemini-3-pro-preview",
-      "friendly_name": "Gemini Pro 3.0 Preview",
+      "model_name": "gemini-4-argon",
+      "friendly_name": "Gemini 4 Argon",
       "aliases": [
         "pro",
-        "gemini3",
-        "gemini-pro"
+        "gemini",
+        "gemini-pro",
+        "argon",
+        "gemini4",
+        "gemini-4"
       ],
-      "intelligence_score": 18,
-      "description": "Deep reasoning + thinking mode (1M context) - Complex problems, architecture, deep analysis",
+      "intelligence_score": 19,
+      "description": "Flagship reasoning model (1M unified context, long decode) - Complex problems, architecture, deep analysis. Not available on the Gemini free tier.",
       "context_window": 1048576,
       "max_output_tokens": 65536,
       "max_thinking_tokens": 32768,
@@ -49,35 +52,14 @@
       "max_image_size_mb": 32.0
     },
     {
-      "model_name": "gemini-2.5-pro",
-      "friendly_name": "Gemini Pro 2.5",
+      "model_name": "gemini-3.8-flash",
+      "friendly_name": "Gemini (Flash 3.8)",
       "aliases": [
-        "gemini-pro-2.5"
+        "flash",
+        "flash3.8"
       ],
-      "intelligence_score": 18,
-      "description": "Older Model. 1M context - Complex problems, architecture, deep analysis",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "max_thinking_tokens": 32768,
-      "supports_extended_thinking": true,
-      "supports_system_prompts": true,
-      "supports_streaming": true,
-      "supports_function_calling": true,
-      "supports_json_mode": true,
-      "supports_images": true,
-      "supports_temperature": true,
-      "allow_code_generation": true,
-      "max_image_size_mb": 32.0
-    },
-    {
-      "model_name": "gemini-2.0-flash",
-      "friendly_name": "Gemini (Flash 2.0)",
-      "aliases": [
-        "flash-2.0",
-        "flash2"
-      ],
-      "intelligence_score": 9,
-      "description": "Gemini 2.0 Flash (1M context) - Latest fast model with experimental thinking, supports audio/video input",
+      "intelligence_score": 16,
+      "description": "Gemini 3.8 Flash (1M context) - Current fast model for long-horizon coding, agents, and everyday tasks. Google's recommended replacement for Gemini 2.5 Flash.",
       "context_window": 1048576,
       "max_output_tokens": 65536,
       "max_thinking_tokens": 24576,
@@ -91,33 +73,55 @@
       "max_image_size_mb": 20.0
     },
     {
-      "model_name": "gemini-2.0-flash-lite",
-      "friendly_name": "Gemini (Flash Lite 2.0)",
+      "model_name": "gemini-3.5-flash-lite",
+      "friendly_name": "Gemini (Flash Lite 3.5)",
       "aliases": [
         "flashlite",
         "flash-lite"
       ],
-      "intelligence_score": 7,
-      "description": "Gemini 2.0 Flash Lite (1M context) - Lightweight fast model, text-only",
+      "intelligence_score": 11,
+      "description": "Gemini 3.5 Flash Lite (1M context) - Fastest current cost-efficient model for high-throughput work",
       "context_window": 1048576,
       "max_output_tokens": 65536,
-      "supports_extended_thinking": false,
+      "max_thinking_tokens": 24576,
+      "supports_extended_thinking": true,
       "supports_system_prompts": true,
       "supports_streaming": true,
       "supports_function_calling": true,
       "supports_json_mode": true,
-      "supports_images": false,
-      "supports_temperature": true
+      "supports_images": true,
+      "supports_temperature": true,
+      "max_image_size_mb": 20.0
+    },
+    {
+      "model_name": "gemini-2.5-pro",
+      "friendly_name": "Gemini Pro 2.5",
+      "aliases": [
+        "gemini-pro-2.5"
+      ],
+      "intelligence_score": 15,
+      "description": "Legacy Gemini 2.5 Pro. Google limits this endpoint to accounts that used it previously; new projects should use gemini-4-argon.",
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "max_thinking_tokens": 32768,
+      "supports_extended_thinking": true,
+      "supports_system_prompts": true,
+      "supports_streaming": true,
+      "supports_function_calling": true,
+      "supports_json_mode": true,
+      "supports_images": true,
+      "supports_temperature": true,
+      "allow_code_generation": true,
+      "max_image_size_mb": 32.0
     },
     {
       "model_name": "gemini-2.5-flash",
       "friendly_name": "Gemini (Flash 2.5)",
       "aliases": [
-        "flash",
         "flash2.5"
       ],
       "intelligence_score": 10,
-      "description": "Ultra-fast (1M context) - Quick analysis, simple queries, rapid iterations",
+      "description": "Legacy Gemini 2.5 Flash. New Google AI Studio keys receive 404; use gemini-3.8-flash instead.",
       "context_window": 1048576,
       "max_output_tokens": 65536,
       "max_thinking_tokens": 24576,

@@ -69,9 +69,9 @@ class TestBuggyBehaviorPrevention:
 
         # Verify both aliases and targets are included
         assert "flash" in all_known  # alias
-        assert "gemini-2.5-flash" in all_known  # target
+        assert "gemini-3.8-flash" in all_known  # target
         assert "pro" in all_known  # alias
-        assert "gemini-2.5-pro" in all_known  # target
+        assert "gemini-4-argon" in all_known  # target
 
         # Simulate admin restricting to target model names
         service = ModelRestrictionService()
@@ -209,7 +209,7 @@ class TestBuggyBehaviorPrevention:
         """Alias-aware listings should expose targets across providers."""
         providers_to_test = [
             (OpenAIModelProvider(api_key="test-key"), "mini", "o4-mini"),
-            (GeminiModelProvider(api_key="test-key"), "flash", "gemini-2.5-flash"),
+            (GeminiModelProvider(api_key="test-key"), "flash", "gemini-3.8-flash"),
         ]
 
         for provider, alias, target in providers_to_test:
